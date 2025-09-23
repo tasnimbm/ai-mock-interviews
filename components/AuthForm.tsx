@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import {
     Form,
     FormControl,
-    FormDescription,
     FormField,
     FormItem,
     FormLabel,
@@ -17,8 +16,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import Link from "next/link"
-import {useRouter} from "next/navigation";
+import { useRouter } from "next/navigation"
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth"
+import { signIn, signUp } from "@/lib/actions/auth.action"
+import { auth } from "@/firebase/client" // ✅ make sure you import your firebase client instance
 
+// Schema builder depending on form type
 const authFormSchema = (type: FormType) => {
     return z.object({
         name: type === "sign-up" ? z.string().min(3) : z.string().optional(),
@@ -28,8 +31,9 @@ const authFormSchema = (type: FormType) => {
 }
 
 const AuthForm = ({ type }: { type: FormType }) => {
-    const router=useRouter();
+    const router = useRouter()
     const formSchema = authFormSchema(type)
+
     const form = useForm<z.infer<typeof formSchema>>({
         resolver: zodResolver(formSchema),
         defaultValues: {
@@ -39,19 +43,51 @@ const AuthForm = ({ type }: { type: FormType }) => {
         },
     })
 
-    function onSubmit(values: z.infer<typeof formSchema>) {
+    // ✅ FIXED: make this async
+    const onSubmit = async (values: z.infer<typeof formSchema>) => {
         try {
             if (type === "sign-up") {
-                toast.success('Account created successfully. Please sign in.');
-                router.push('/sign-in');
+                const { name, email, password } = values
 
+                // Firebase signup
+                const userCredentials = await createUserWithEmailAndPassword(auth, email, password)
+
+                // Call your server action
+                const result = await signUp({
+                    uid: userCredentials.user.uid,
+                    name: name ?? "",
+                    email,
+                    password,
+                })
+
+                if (!result?.success) {
+                    toast.error(result.message)
+                    return
+                }
+
+                toast.success("Account created successfully. Please sign in.")
+                router.push("/sign-in")
             } else {
-                toast.success('Sign in successfully.');
-                router.push('/');
+                const { email, password } = values
+
+                // Firebase sign-in
+                const userCredential = await signInWithEmailAndPassword(auth, email, password)
+                const idToken = await userCredential.user.getIdToken()
+
+                if (!idToken) {
+                    toast.error("Sign in failed")
+                    return
+                }
+
+                // Call your server action
+                await signIn({ email, idToken })
+
+                toast.success("Signed in successfully.")
+                router.push("/")
             }
-        } catch (error) {
-            console.log(error)
-            toast.error(`There is an error: ${error}`)
+        } catch (error: any) {
+            console.error(error)
+            toast.error(`There was an error: ${error.message ?? error}`)
         }
     }
 
