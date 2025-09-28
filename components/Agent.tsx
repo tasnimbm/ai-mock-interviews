@@ -33,11 +33,16 @@ const Agent = ({
     const [callStatus, setCallStatus] = useState<CallStatus>(CallStatus.INACTIVE);
     const [messages, setMessages] = useState<SavedMessage[]>([]);
     const [isSpeaking, setIsSpeaking] = useState(false);
+    const [lastMessage, setLastMessage] = useState<string>("");
 
-    // Listen to Vapi events
     useEffect(() => {
-        const onCallStart = () => setCallStatus(CallStatus.ACTIVE);
-        const onCallEnd = () => setCallStatus(CallStatus.FINISHED);
+        const onCallStart = () => {
+            setCallStatus(CallStatus.ACTIVE);
+        };
+
+        const onCallEnd = () => {
+            setCallStatus(CallStatus.FINISHED);
+        };
 
         const onMessage = (message: Message) => {
             if (message.type === "transcript" && message.transcriptType === "final") {
@@ -46,9 +51,19 @@ const Agent = ({
             }
         };
 
-        const onSpeechStart = () => setIsSpeaking(true);
-        const onSpeechEnd = () => setIsSpeaking(false);
-        const onError = (error: Error) => console.error("VAPI Error:", error);
+        const onSpeechStart = () => {
+            console.log("speech start");
+            setIsSpeaking(true);
+        };
+
+        const onSpeechEnd = () => {
+            console.log("speech end");
+            setIsSpeaking(false);
+        };
+
+        const onError = (error: Error) => {
+            console.log("Error:", error);
+        };
 
         vapi.on("call-start", onCallStart);
         vapi.on("call-end", onCallEnd);
@@ -67,13 +82,17 @@ const Agent = ({
         };
     }, []);
 
-    // Handle feedback or redirect after call ends
     useEffect(() => {
-        const handleGenerateFeedback = async () => {
-            if (!interviewId || !userId) return;
+        if (messages.length > 0) {
+            setLastMessage(messages[messages.length - 1].content);
+        }
+
+        const handleGenerateFeedback = async (messages: SavedMessage[]) => {
+            console.log("handleGenerateFeedback");
+
             const { success, feedbackId: id } = await createFeedback({
-                interviewId,
-                userId,
+                interviewId: interviewId!,
+                userId: userId!,
                 transcript: messages,
                 feedbackId,
             });
@@ -81,7 +100,7 @@ const Agent = ({
             if (success && id) {
                 router.push(`/interview/${interviewId}/feedback`);
             } else {
-                console.error("Error saving feedback");
+                console.log("Error saving feedback");
                 router.push("/");
             }
         };
@@ -90,45 +109,38 @@ const Agent = ({
             if (type === "generate") {
                 router.push("/");
             } else {
-                handleGenerateFeedback();
+                handleGenerateFeedback(messages);
             }
         }
-    }, [callStatus, messages, interviewId, feedbackId, router, type, userId]);
+    }, [messages, callStatus, feedbackId, interviewId, router, type, userId]);
 
-    // Start the call
     const handleCall = async () => {
         setCallStatus(CallStatus.CONNECTING);
 
-        try {
-            if (type === "generate") {
-                // Start workflow directly, without an Agent
-                await vapi.start(
-                    undefined, // Agent ID
-                    undefined, // Second param (context?)
-                    undefined, // Third param
-                    process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, // Workflow ID
-                    {
-                        variableValues: {
-                            username: userName,
-                            userid: userId,
-                        },
-                    }
-                );
-            } else {
-                // Format questions safely
-                const formattedQuestions = Array.isArray(questions)
-                    ? questions.map((q) => `- ${q}`).join("\n")
-                    : "";
-
-                await vapi.start(interviewer, {
+        if (type === "generate") {
+            await vapi.start(
+                undefined, // no agent
+                undefined,
+                undefined,
+                process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, // workflow id
+                {
                     variableValues: {
-                        questions: formattedQuestions,
+                        username: userName,
+                        userid: userId, // this now flows into your workflow JSON
                     },
-                });
+                }
+            );
+        } else {
+            let formattedQuestions = "";
+            if (questions) {
+                formattedQuestions = questions.map((q) => `- ${q}`).join("\n");
             }
-        } catch (error) {
-            console.error("Error starting call:", error);
-            setCallStatus(CallStatus.INACTIVE);
+
+            await vapi.start(interviewer, {
+                variableValues: {
+                    questions: formattedQuestions,
+                },
+            });
         }
     };
 
@@ -161,52 +173,49 @@ const Agent = ({
                         <Image
                             src="/user-avatar.png"
                             alt="profile-image"
-                            width={120}
-                            height={120}
-                            className="rounded-full object-cover"
+                            width={539}
+                            height={539}
+                            className="rounded-full object-cover size-[120px]"
                         />
                         <h3>{userName}</h3>
                     </div>
                 </div>
             </div>
 
-            {/* Transcript */}
             {messages.length > 0 && (
                 <div className="transcript-border">
-                    <div className="transcript space-y-2">
-                        {messages.map((msg, idx) => (
-                            <p
-                                key={idx}
-                                className={cn(
-                                    msg.role === "user" ? "text-blue-500" : "text-gray-800",
-                                    "transition-opacity duration-300"
-                                )}
-                            >
-                                {msg.role}: {msg.content}
-                            </p>
-                        ))}
+                    <div className="transcript">
+                        <p
+                            key={lastMessage}
+                            className={cn(
+                                "transition-opacity duration-500 opacity-0",
+                                "animate-fadeIn opacity-100"
+                            )}
+                        >
+                            {lastMessage}
+                        </p>
                     </div>
                 </div>
             )}
 
-            {/* Call Buttons */}
-            <div className="w-full flex justify-center mt-4">
-                {callStatus !== CallStatus.ACTIVE ? (
-                    <button className="relative btn-call" onClick={handleCall}>
+            <div className="w-full flex justify-center">
+                {callStatus !== "ACTIVE" ? (
+                    <button className="relative btn-call" onClick={() => handleCall()}>
             <span
                 className={cn(
                     "absolute animate-ping rounded-full opacity-75",
-                    callStatus !== CallStatus.CONNECTING && "hidden"
+                    callStatus !== "CONNECTING" && "hidden"
                 )}
             />
+
                         <span className="relative">
-              {callStatus === CallStatus.INACTIVE || callStatus === CallStatus.FINISHED
+              {callStatus === "INACTIVE" || callStatus === "FINISHED"
                   ? "Call"
                   : ". . ."}
             </span>
                     </button>
                 ) : (
-                    <button className="btn-disconnect" onClick={handleDisconnect}>
+                    <button className="btn-disconnect" onClick={() => handleDisconnect()}>
                         End
                     </button>
                 )}
