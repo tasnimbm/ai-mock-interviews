@@ -113,27 +113,28 @@ const Agent = ({
             }
         }
     }, [messages, callStatus, feedbackId, interviewId, router, type, userId]);
-
     const handleCall = async () => {
         setCallStatus(CallStatus.CONNECTING);
 
         if (type === "generate") {
             await vapi.start(
-                undefined, // no agent
                 undefined,
                 undefined,
-                process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!, // workflow id
+                undefined,
+                process.env.NEXT_PUBLIC_VAPI_WORKFLOW_ID!,
                 {
                     variableValues: {
                         username: userName,
-                        userid: userId, // this now flows into your workflow JSON
+                        userid: userId,
                     },
                 }
             );
         } else {
             let formattedQuestions = "";
             if (questions) {
-                formattedQuestions = questions.map((q) => `- ${q}`).join("\n");
+                formattedQuestions = questions
+                    .map((question) => `- ${question}`)
+                    .join("\n");
             }
 
             await vapi.start(interviewer, {
@@ -143,7 +144,6 @@ const Agent = ({
             });
         }
     };
-
     const handleDisconnect = () => {
         setCallStatus(CallStatus.FINISHED);
         vapi.stop();

@@ -68,10 +68,10 @@ export async function createFeedback(params: CreateFeedbackParams) {
 
 export async function getInterviewById(id: string): Promise<Interview | null> {
     const interview = await db.collection("interviews").doc(id).get();
-
     return interview.data() as Interview | null;
 }
 
+// FIX: Make sure this function is exported with the exact name
 export async function getFeedbackByInterviewId(
     params: GetFeedbackByInterviewIdParams
 ): Promise<Feedback | null> {
@@ -122,4 +122,22 @@ export async function getInterviewsByUserId(
         id: doc.id,
         ...doc.data(),
     })) as Interview[];
+}
+
+// Add missing type definitions if needed
+export interface GetFeedbackByInterviewIdParams {
+    interviewId: string;
+    userId: string;
+}
+
+export interface GetLatestInterviewsParams {
+    userId: string;
+    limit?: number;
+}
+
+export interface CreateFeedbackParams {
+    interviewId: string;
+    userId: string;
+    transcript: any[];
+    feedbackId?: string;
 }
