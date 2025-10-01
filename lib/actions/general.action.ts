@@ -18,24 +18,40 @@ export async function createFeedback(params: CreateFeedbackParams) {
             .join("");
 
         const { object } = await generateObject({
-            model: google("gemini-2.0-flash-001", {
-                structuredOutputs: false,
-            }),
+            model: google("gemini-2.0-flash-001"),
             schema: feedbackSchema,
             prompt: `
-        You are an AI interviewer analyzing a mock interview. Your task is to evaluate the candidate based on structured categories. Be thorough and detailed in your analysis. Don't be lenient with the candidate. If there are mistakes or areas for improvement, point them out.
-        Transcript:
-        ${formattedTranscript}
+You are an experienced technical interviewer. 
+Your job is to evaluate the candidate's performance in a structured and detailed way.
 
-        Please score the candidate from 0 to 100 in the following areas. Do not add categories other than the ones provided:
-        - **Communication Skills**: Clarity, articulation, structured responses.
-        - **Technical Knowledge**: Understanding of key concepts for the role.
-        - **Problem-Solving**: Ability to analyze problems and propose solutions.
-        - **Cultural & Role Fit**: Alignment with company values and job role.
-        - **Confidence & Clarity**: Confidence in responses, engagement, and clarity.
-        `,
-            system:
-                "You are a professional interviewer analyzing a mock interview. Your task is to evaluate the candidate based on structured categories",
+Use the transcript below to analyze the candidate's answers. 
+Be STRICT but fair. Highlight both strengths and weaknesses clearly.
+
+Transcript:
+${formattedTranscript}
+
+Instructions for scoring:
+- Give each category a score between 0 and 100. 
+- Justify the score with a short but specific comment (1–3 sentences).
+- Scores should NOT all be high. If the candidate struggles, reflect that in the score.
+- Always mention concrete examples from the transcript if possible.
+
+Categories:
+1. Communication Skills — clarity, articulation, logical structure.
+2. Technical Knowledge — accuracy, depth, and relevance of answers.
+3. Problem Solving — reasoning, creativity, handling of challenges.
+4. Cultural & Role Fit — alignment with company/team values, collaboration, motivation.
+5. Confidence & Clarity — confidence, tone, and decisiveness.
+
+Additional requirements:
+- "strengths": Provide at least 2 bullet points with positive aspects.
+- "areasForImprovement": Provide at least 2 bullet points with weaknesses or things to improve.
+- "finalAssessment": A short paragraph (3–4 sentences) giving your overall impression of the candidate.
+`,
+            system: `
+You are a professional interviewer analyzing a mock interview. 
+Provide structured and useful feedback, not vague or overly positive.
+`,
         });
 
         const feedback = {
@@ -68,10 +84,10 @@ export async function createFeedback(params: CreateFeedbackParams) {
 
 export async function getInterviewById(id: string): Promise<Interview | null> {
     const interview = await db.collection("interviews").doc(id).get();
+
     return interview.data() as Interview | null;
 }
 
-// FIX: Make sure this function is exported with the exact name
 export async function getFeedbackByInterviewId(
     params: GetFeedbackByInterviewIdParams
 ): Promise<Feedback | null> {
@@ -122,22 +138,4 @@ export async function getInterviewsByUserId(
         id: doc.id,
         ...doc.data(),
     })) as Interview[];
-}
-
-// Add missing type definitions if needed
-export interface GetFeedbackByInterviewIdParams {
-    interviewId: string;
-    userId: string;
-}
-
-export interface GetLatestInterviewsParams {
-    userId: string;
-    limit?: number;
-}
-
-export interface CreateFeedbackParams {
-    interviewId: string;
-    userId: string;
-    transcript: any[];
-    feedbackId?: string;
 }
