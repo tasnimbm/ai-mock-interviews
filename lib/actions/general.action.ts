@@ -6,72 +6,88 @@ import { google } from "@ai-sdk/google";
 import { db } from "@/firebase/admin";
 import { feedbackSchema } from "@/constants";
 
+
+
 export async function createFeedback(params: CreateFeedbackParams) {
     const { interviewId, userId, transcript, feedbackId } = params;
 
     try {
-        const formattedTranscript = transcript
-            .map(
-                (sentence: { role: string; content: string }) =>
-                    `- ${sentence.role}: ${sentence.content}\n`
-            )
+        // Only include candidate/user messages
+        const candidateLines = transcript
+            .filter((s: { role: string }) => s.role === "user" || s.role === "candidate")
+            .map((s) => `- ${s.content}\n`)
             .join("");
 
-        const { object } = await generateObject({
-            model: google("gemini-2.0-flash-001"),
-            schema: feedbackSchema,
-            prompt: `
-You are an experienced technical interviewer. 
-Your job is to evaluate the candidate's performance in a structured and detailed way.
+        let feedback: Feedback;
 
-Use the transcript below to analyze the candidate's answers. 
-Be STRICT but fair. Highlight both strengths and weaknesses clearly.
+        // Handle empty candidate transcript
+        if (!candidateLines.trim()) {
+            feedback = {
+                interviewId,
+                userId,
+                totalScore: 0,
+                categoryScores: [
+                    { name: "Communication Skills", score: 0, comment: "" },
+                    { name: "Technical Knowledge", score: 0, comment: "" },
+                    { name: "Problem Solving", score: 0, comment: "" },
+                    { name: "Cultural & Role Fit", score: 0, comment: "" },
+                    { name: "Confidence & Clarity", score: 0, comment: "" },
+                ],
+                strengths: [],
+                areasForImprovement: [],
+                finalAssessment:
+                    "No feedback could be generated. The candidate did not provide any responses during the interview.",
+                createdAt: new Date().toISOString(),
+            };
+        } else {
+            // Call Gemini only if candidate spoke
+            const { object } = await generateObject({
+                model: google("gemini-2.0-flash-001"),
+                schema: feedbackSchema,
+                prompt: `
+You are an experienced technical interviewer. 
+Evaluate the candidate's performance strictly and fairly.
 
 Transcript:
-${formattedTranscript}
+${candidateLines}
 
 Instructions for scoring:
 - Give each category a score between 0 and 100. 
 - Justify the score with a short but specific comment (1–3 sentences).
-- Scores should NOT all be high. If the candidate struggles, reflect that in the score.
-- Always mention concrete examples from the transcript if possible.
-
-Categories:
+- Use concrete examples from the transcript if possible.
+- Categories:
 1. Communication Skills — clarity, articulation, logical structure.
 2. Technical Knowledge — accuracy, depth, and relevance of answers.
-3. Problem Solving — reasoning, creativity, handling of challenges.
+3. Problem Solving — reasoning, creativity, handling challenges.
 4. Cultural & Role Fit — alignment with company/team values, collaboration, motivation.
 5. Confidence & Clarity — confidence, tone, and decisiveness.
 
-Additional requirements:
-- "strengths": Provide at least 2 bullet points with positive aspects.
-- "areasForImprovement": Provide at least 2 bullet points with weaknesses or things to improve.
-- "finalAssessment": A short paragraph (3–4 sentences) giving your overall impression of the candidate.
+Additional:
+- Provide at least 2 bullet points for strengths and areas for improvement.
+- FinalAssessment: a short paragraph (3–4 sentences) giving your overall impression.
 `,
-            system: `
+                system: `
 You are a professional interviewer analyzing a mock interview. 
-Provide structured and useful feedback, not vague or overly positive.
+Provide structured and realistic feedback, not vague or overly positive.
 `,
-        });
+            });
 
-        const feedback = {
-            interviewId: interviewId,
-            userId: userId,
-            totalScore: object.totalScore,
-            categoryScores: object.categoryScores,
-            strengths: object.strengths,
-            areasForImprovement: object.areasForImprovement,
-            finalAssessment: object.finalAssessment,
-            createdAt: new Date().toISOString(),
-        };
-
-        let feedbackRef;
-
-        if (feedbackId) {
-            feedbackRef = db.collection("feedback").doc(feedbackId);
-        } else {
-            feedbackRef = db.collection("feedback").doc();
+            feedback = {
+                interviewId,
+                userId,
+                totalScore: object.totalScore,
+                categoryScores: object.categoryScores,
+                strengths: object.strengths,
+                areasForImprovement: object.areasForImprovement,
+                finalAssessment: object.finalAssessment,
+                createdAt: new Date().toISOString(),
+            };
         }
+
+        // Save feedback to Firestore
+        const feedbackRef = feedbackId
+            ? db.collection("feedback").doc(feedbackId)
+            : db.collection("feedback").doc();
 
         await feedbackRef.set(feedback);
 
